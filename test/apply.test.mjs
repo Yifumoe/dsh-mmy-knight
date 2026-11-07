@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { apply, Config, name } from '../lib/index.js';
+import { apply, Config, liveConfig, name } from '../lib/index.js';
 
 test('插件导出 name 与 Config', () => {
   assert.equal(name, 'dsh-mmy-knight');
@@ -23,14 +23,33 @@ test('apply 会挂上三个钩子并启动重试心跳', () => {
 });
 
 test('scheduleRetryEnabled=0 时不装重试心跳', () => {
-  let effects = 0;
+  const effects = [];
   const ctx = {
     on: () => {},
-    effect: (fn) => { effects += 1; return fn(); },
+    effect: (fn, desc) => { effects.push(String(desc ?? '')); return fn(); },
     root: { get: () => undefined },
     tools: { register: () => {} },
   };
   apply(ctx, { scheduleRetryEnabled: 0 });
-  // 只剩 repeat-guard 自己的 effect（若有），不应有 retry timer 的清理器
-  assert.ok(effects >= 0);
+  assert.equal(effects.filter((d) => d.includes('retry timer')).length, 0);
+});
+
+test('默认装重试心跳', () => {
+  const effects = [];
+  const ctx = {
+    on: () => {},
+    effect: (fn, desc) => { effects.push(String(desc ?? '')); return fn(); },
+    root: { get: () => undefined },
+    tools: { register: () => {} },
+  };
+  apply(ctx, { scheduleRetryIntervalSec: 5 });
+  assert.equal(effects.filter((d) => d.includes('retry timer')).length, 1);
+});
+
+test('liveConfig：改原配置字段后读到新值（设置页立即生效）', () => {
+  const raw = { repeatGuardEchoMin: 2 };
+  const cfg = liveConfig(raw);
+  assert.equal(cfg.repeatGuardEchoMin, 2);
+  raw.repeatGuardEchoMin = 5;
+  assert.equal(cfg.repeatGuardEchoMin, 5);
 });
