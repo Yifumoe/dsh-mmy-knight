@@ -12,15 +12,14 @@ DSH 的「安静骑士」：拦住模型复读打转，顺手把调度器的投�
 ## 安装
 
 ```bash
-dsh plugin --profile desktop install dsh-mmy-knight
+dsh plugin --profile desktop add file:<本仓库绝对路径>
 ```
 
-或者从源码目录：
+或者从源码目录（复制安装，最稳）：
 
 ```bash
 cd dsh-mmy-knight
-npm link
-dsh plugin --profile desktop link dsh-mmy-knight
+dsh plugin --profile desktop add file:$(pwd)
 ```
 
 装完重启 DSH。
