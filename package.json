@@ -23,6 +23,14 @@
     "loop-detection"
   ],
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Yifumoe/dsh-mmy-knight.git"
+  },
+  "homepage": "https://github.com/Yifumoe/dsh-mmy-knight#readme",
+  "bugs": {
+    "url": "https://github.com/Yifumoe/dsh-mmy-knight/issues"
+  },
   "engines": {
     "node": ">=22"
   },

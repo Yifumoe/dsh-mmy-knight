@@ -71,12 +71,12 @@ dsh plugin --profile desktop add file:$(pwd)
 | --- | --- | --- |
 | `cacheDir` | `$DSH_HOME/cache` | 日志与状态目录 |
 
-日志：`<cacheDir>/repeat-guard.jsonl`（每次命中一行）、`<cacheDir>/mmy-knight.log`（加载与诊断）。
+日志：`<cacheDir>/repeat-guard.jsonl`（每次命中一行）、`<cacheDir>/mmy-knight.log`（加载与诊断）。宿主侧的 `startup-catchup` 与 `mmy_repeat_guard` 会同时读工作区 `.cache` 和 `$DSH_HOME/cache`，默认配置下两边都能看到。
 
 ## 开发
 
 ```bash
-npm test          # 判据单测（5 例）
+npm test          # 判据 / 熔断 / 流截断 / 折叠 / 工具循环 / 调度重试（23 例）
 node --check lib/index.js
 ```
 
