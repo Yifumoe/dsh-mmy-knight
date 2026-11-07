@@ -1,0 +1,42 @@
+{
+  "name": "dsh-mmy-knight",
+  "version": "0.1.0",
+  "description": "DSH 插件：拦住模型复读打转（llm/stream + turn-stopping），并在调度器投递失败时自动重试。",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "repeat-guard",
+    "schedule",
+    "retry",
+    "loop-detection"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-llm": ">=0.2.1-rc.2",
+    "@deepseek-ai/dsh-tools": ">=0.2.1-rc.2",
+    "@deepseek-ai/schemastery": ">=3.18.2"
+  }
+}
