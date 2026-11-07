@@ -1,6 +1,6 @@
 import test, { mock } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -9,8 +9,10 @@ import {
   checkFuse,
   createTurnStoppingGuard,
   decideFuseAction,
+  fingerprint,
   guardStream,
   logHit,
+  repeatGuardStats,
   stripCode,
   sweepDegenerate,
   sweepToolLoop,
@@ -231,4 +233,42 @@ test('turn-stopping：无 sessionId 直接返回，不消费 no-session 的 pend
   const guard = createTurnStoppingGuard(state, () => fullCfg());
   guard({ agent: {} });
   assert.ok(state.pending.has('no-session'), '不应消费共享 key');
+});
+
+test('repeatGuardStats：不传 sessionId 只给聚合，不列明细', () => {
+  const dir = tempDir();
+  const now = new Date().toISOString();
+  writeFileSync(
+    join(dir, 'repeat-guard.jsonl'),
+    [
+      JSON.stringify({ at: now, sessionId: 'sess-A', kind: 'echo', evidence: 'A 的片段', count: 2 }),
+      JSON.stringify({ at: now, sessionId: 'sess-B', kind: 'echo', evidence: 'B 的片段', count: 3 }),
+    ].join('\n') + '\n',
+  );
+  const out = repeatGuardStats({ cacheDir: dir }, { days: 1 });
+  assert.ok(out.includes('未指定会话'), '应提示只给聚合');
+  assert.ok(!out.includes('A 的片段') && !out.includes('B 的片段'), '不应出现任何会话明细');
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('repeatGuardStats：传 sessionId 只统计该会话', () => {
+  const dir = tempDir();
+  const now = new Date().toISOString();
+  writeFileSync(
+    join(dir, 'repeat-guard.jsonl'),
+    [
+      JSON.stringify({ at: now, sessionId: 'sess-A', kind: 'echo', evidence: 'A 的片段', count: 2 }),
+      JSON.stringify({ at: now, sessionId: 'sess-B', kind: 'echo', evidence: 'B 的片段', count: 3 }),
+    ].join('\n') + '\n',
+  );
+  const out = repeatGuardStats({ cacheDir: dir }, { days: 1, sessionId: 'sess-A' });
+  assert.ok(out.includes('A 的片段'), '应含 A 的明细');
+  assert.ok(!out.includes('B 的片段'), '不应含 B 的明细');
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('fingerprint：同参数稳定、不同参数不同', () => {
+  assert.equal(fingerprint('{"a":1}'), fingerprint('{"a":1}'));
+  assert.notEqual(fingerprint('{"a":1}'), fingerprint('{"a":2}'));
+  assert.equal(fingerprint('{"a":1}').length, 12);
 });
