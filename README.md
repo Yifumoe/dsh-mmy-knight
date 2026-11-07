@@ -47,12 +47,12 @@ dsh plugin --profile desktop link dsh-mmy-knight
 | `repeatGuardSentMin` | 3 | 句子复读：同一句出现几次 |
 | `repeatGuardLoopMin` | 4 | 原地打转：短行重复多少次 |
 | `repeatGuardShortRepeat` | 5 | 口头禅：同一极短句出现几次 |
-| `repeatGuardBody` | 1 | 也查正文（0 = 只查思考段） |
+| `repeatGuardBody` | 0 | 也查正文（默认只查思考段，防误伤表格与清单） |
 | `repeatGuardFuse` | 3 | 熔断窗口内最多拦几次 |
 | `repeatGuardFuseWindow` | 15 | 熔断统计窗口（分钟） |
 | `repeatGuardCooldownMin` | 10 | 熔断后静默冷却（分钟） |
 | `repeatGuardMaxRecoveries` | 1 | 熔断后自动恢复几次 |
-| `repeatGuardHandoff` | 1 | 恢复后仍熔断就强制交接 |
+| `repeatGuardHandoff` | 0 | 恢复后仍熔断就强制交接（默认关：开了会新建会话） |
 | `repeatGuardFold` | 0 | 退化步折叠（默认关） |
 | `repeatGuardFoldDryRun` | 1 | 折叠先只观察 |
 | `repeatGuardFoldMinChars` | 300 | 折叠：思考段最短多少字才处理 |
@@ -86,7 +86,7 @@ node --check lib/index.js
 ## 已知边界
 
 - 判据是启发式的：宁可漏判，不误伤清单与代码块
-- 熔断后强制交接默认开启，它会写 `memory/交接.md` 并调 `mmy_new_chat`；不想让它动会话就把 `repeatGuardHandoff` 设 0
+- 熔断后强制交接**默认关闭**：它会写 `memory/交接.md` 并调 `mmy_new_chat` 新建会话，对「记住你」这件事是反效果；需要时再显式设 `repeatGuardHandoff: 1`
 - 调度器重试依赖 `ctx.root.get('schedule')`；宿主没有 schedule 服务时静默跳过
 
 ## License
