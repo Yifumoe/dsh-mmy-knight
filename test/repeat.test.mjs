@@ -39,3 +39,40 @@ test('关闭全部判据时永不复读', () => {
   const hit = analyzeRepeat('写。\n写。\n写。\n写。', off);
   assert.equal(hit, null);
 });
+
+test('nudge：2 行提醒不命中（2026-11-08 二次事故）', () => {
+  const line = '（过程纪律提醒）上一步只执行了工具、没有输出正文。';
+  const hit = analyzeRepeat([line, '正常的一句话。', line].join('\n'), BASE);
+  assert.equal(hit, null);
+});
+
+test('nudge：连续 3 行提醒命中', () => {
+  const a = '（过程纪律提醒）上一步只执行了工具、没有输出正文。';
+  const b = '（过程纪律提醒）现在先用 1–3 句正文向用户说明。';
+  const c = '（过程纪律提醒）刚做了什么、得出了什么结论、下一步做什么。';
+  const hit = analyzeRepeat([a, b, c].join('\n'), BASE);
+  assert.ok(hit, '应命中');
+  assert.equal(hit.kind, 'nudge');
+});
+
+test('nudge：2 行提醒中间夹正常行不命中', () => {
+  const a = '（过程纪律提醒）上一步只执行了工具、没有输出正文。';
+  const b = '（过程纪律提醒）现在先用 1–3 句正文向用户说明。';
+  const hit = analyzeRepeat([a, b, '正常的一句话。', '另一句正常的话。'].join('\n'), BASE);
+  assert.equal(hit, null);
+});
+
+test('nudge：repeatGuardNudgeRun 可配（2 行即命中）', () => {
+  const a = '（过程纪律提醒）上一步只执行了工具、没有输出正文。';
+  const b = '（过程纪律提醒）现在先用 1–3 句正文向用户说明。';
+  const hit = analyzeRepeat([a, b].join('\n'), { ...BASE, nudgeRun: 2 });
+  assert.ok(hit, '应命中');
+  assert.equal(hit.kind, 'nudge');
+});
+
+test('nudge：repeatGuardNudgeRun 调高到 5 时 3 行不命中', () => {
+  const a = '（过程纪律提醒）上一步只执行了工具、没有输出正文。';
+  const b = '（过程纪律提醒）现在先用 1–3 句正文向用户说明。';
+  const c = '（过程纪律提醒）刚做了什么、得出了什么结论、下一步做什么。';
+  assert.equal(analyzeRepeat([a, b, c].join('\n'), { ...BASE, nudgeRun: 5 }), null);
+});
