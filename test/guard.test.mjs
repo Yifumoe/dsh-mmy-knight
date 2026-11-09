@@ -134,6 +134,30 @@ test('guardStream：没有 sessionId 时只截断、不写 pending（防串台�
   rmSync(cfg.cacheDir, { recursive: true, force: true });
 });
 
+test('guardStream：正文命中进入冷却后，后续文本与工具事件按顺序完整到达（GPT 审查）', async () => {
+  const cfg = fullCfg({ bodyGuard: true });
+  const state = newState();
+  // 预置冷却：checkFuse 返回 pass/cooldown，走正文放行分支。
+  state.fuse.set('s1', { count: 0, since: Date.now(), cooldownUntil: Date.now() + 600000 });
+  const line = '这一句是重复的正文内容，长度足够触发判据。';
+  const chunks = [
+    ...Array.from({ length: 6 }, () => ({ type: 'text-delta', text: line, index: 0 })),
+    { type: 'text-delta', text: '后续正文。', index: 0 },
+    { type: 'tool-call', name: 'x', index: 0 },
+  ];
+  const out = [];
+  for await (const chunk of guardStream(fromList(chunks), 's1', state, () => cfg)) {
+    out.push(chunk);
+  }
+  assert.ok(!out.some((c) => c.type === 'finish'), '冷却期不应截断');
+  assert.ok(
+    out.some((c) => c.type === 'text-delta' && c.text === '后续正文。'),
+    'probe 之后的正文应到达',
+  );
+  assert.ok(out.some((c) => c.type === 'tool-call' && c.name === 'x'), '工具事件应到达');
+  rmSync(cfg.cacheDir, { recursive: true, force: true });
+});
+
 test('schedule-retry：心跳到点会调 requestDrive', () => {
   mock.timers.enable({ apis: ['setInterval'] });
   let calls = 0;
@@ -297,18 +321,16 @@ test('guardStream：正文截断时 probe 到的 tool-call 不丢（GPT 审查�
   rmSync(cfg.cacheDir, { recursive: true, force: true });
 });
 
-test('probeWithTimeout：超时后迟到的 step 交给 onLate，不丢（GPT 审查）', async () => {
-  let late = null;
+test('probeWithTimeout：超时后返回 pending，由调用方消费，不丢（GPT 审查）', async () => {
   const iterator = {
     next: () =>
       new Promise((resolve) =>
         setTimeout(() => resolve({ done: false, value: { type: 'text-delta', text: '迟到' } }), 60),
       ),
   };
-  const probe = await probeWithTimeout(iterator, 10, (step) => {
-    late = step;
-  });
-  assert.equal(probe, null, '超时应返回 null');
-  await new Promise((r) => setTimeout(r, 120));
-  assert.equal(late?.value?.text, '迟到', '迟到的 step 应交给 onLate');
+  const result = await probeWithTimeout(iterator, 10);
+  assert.equal(result.step, null, '超时应返回 step=null');
+  assert.ok(result.pending, '超时应返回未完成的 pending');
+  const late = await result.pending;
+  assert.equal(late?.value?.text, '迟到', 'pending 应能拿到迟到的 step');
 });
