@@ -34,6 +34,27 @@ test('同一长句出现 3 次判句子复读', () => {
   assert.ok(hit, '应命中');
 });
 
+test('4 种句子循环 22 次：最后 20 句每种只剩 4 次也要命中（2026-11-09 实测漏判）', () => {
+  const a = '但主人可能觉得这个工具慢是因为它没字幕时跑 ASR。';
+  const b = '先回答：这个工具有字幕时快，没字幕时慢；另一个总是慢。';
+  const c = '判断：这个工具不是最慢的那个——它比另一个快。';
+  const d = '但主人说「是就删掉」——如果它是那个很慢的，就删。';
+  const lines = [];
+  for (let i = 0; i < 22; i += 1) lines.push(a, b, c, d);
+  const hit = analyzeRepeat(lines.join('\n'), BASE);
+  assert.ok(hit, '应命中');
+  assert.equal(hit.kind, 'sent');
+});
+
+test('正常长文本里同一句偶尔出现 3 次不误判（去重率条件）', () => {
+  const s = '这一句在正常长文里偶尔出现一次。';
+  const lines = [];
+  for (let i = 0; i < 30; i += 1) lines.push(`第 ${i} 行是各不相同的正常内容，用来稀释重复句。`);
+  lines.push(s, '中间插一句别的。', s, '再插一句别的。', s);
+  const hit = analyzeRepeat(lines.join('\n'), BASE);
+  assert.equal(hit, null);
+});
+
 test('关闭全部判据时永不复读', () => {
   const off = { echoMin: 0, paraMin: 0, sentMin: 0, loopMin: 0, shortRepeatMin: 0 };
   const hit = analyzeRepeat('写。\n写。\n写。\n写。', off);
