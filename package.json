@@ -1,7 +1,7 @@
 {
   "name": "dsh-mmy-knight",
-  "version": "0.1.0",
-  "description": "DSH 插件：拦住模型复读打转（llm/stream + turn-stopping），并在调度器投递失败时自动重试。",
+  "version": "0.2.0",
+  "description": "DSH 插件「小伊的守护骑士」：拦住模型复读打转（llm/stream + turn-stopping）、过程纪律提醒，并在调度器投递失败时自动重试。",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
@@ -18,7 +18,10 @@
   "keywords": [
     "dsh",
     "dsh-plugin",
+    "knight",
     "repeat-guard",
+    "process-discipline",
+    "progress-nudge",
     "schedule",
     "retry",
     "loop-detection"
