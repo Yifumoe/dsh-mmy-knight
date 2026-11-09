@@ -12,6 +12,7 @@ import {
   fingerprint,
   guardStream,
   logHit,
+  probeWithTimeout,
   repeatGuardStats,
   stripCode,
   sweepDegenerate,
@@ -271,4 +272,43 @@ test('fingerprint：同参数稳定、不同参数不同', () => {
   assert.equal(fingerprint('{"a":1}'), fingerprint('{"a":1}'));
   assert.notEqual(fingerprint('{"a":1}'), fingerprint('{"a":2}'));
   assert.equal(fingerprint('{"a":1}').length, 12);
+});
+
+test('guardStream：正文截断时 probe 到的 tool-call 不丢（GPT 审查）', async () => {
+  const cfg = fullCfg({ bodyGuard: true });
+  const state = newState();
+  const line = '这是一句会被判复读的话。\n';
+  const out = [];
+  for await (const chunk of guardStream(
+    fromList([
+      { type: 'text-delta', text: line, index: 0 },
+      { type: 'text-delta', text: line, index: 0 },
+      { type: 'text-delta', text: line, index: 0 },
+      { type: 'tool-call', name: 'read', index: 0 },
+    ]),
+    's1',
+    state,
+    () => cfg,
+  )) {
+    out.push(chunk);
+  }
+  assert.ok(out.some((c) => c.type === 'finish' && c.reason?.kind === 'stop'), '应截断');
+  assert.ok(out.some((c) => c.type === 'tool-call'), 'probe 到的 tool-call 应被转发，不能丢');
+  rmSync(cfg.cacheDir, { recursive: true, force: true });
+});
+
+test('probeWithTimeout：超时后迟到的 step 交给 onLate，不丢（GPT 审查）', async () => {
+  let late = null;
+  const iterator = {
+    next: () =>
+      new Promise((resolve) =>
+        setTimeout(() => resolve({ done: false, value: { type: 'text-delta', text: '迟到' } }), 60),
+      ),
+  };
+  const probe = await probeWithTimeout(iterator, 10, (step) => {
+    late = step;
+  });
+  assert.equal(probe, null, '超时应返回 null');
+  await new Promise((r) => setTimeout(r, 120));
+  assert.equal(late?.value?.text, '迟到', '迟到的 step 应交给 onLate');
 });
