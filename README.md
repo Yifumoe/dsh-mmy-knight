@@ -92,6 +92,18 @@ dsh plugin --profile desktop add file:$(pwd)
 | `scheduleRetryEnabled` | 1 | 总开关 |
 | `scheduleRetryIntervalSec` | 60 | 心跳间隔（秒，最小 5） |
 
+### 会话健康
+
+| 字段 | 默认 | 说明 |
+| --- | --- | --- |
+| `sessionHealthEnabled` | 1 | 巡检总开关（1 开 / 0 关） |
+| `sessionHealthMinutes` | 5 | 巡检间隔（分钟） |
+| `sessionHealthDays` | 3 | 只看最近几天的会话 |
+
+宿主侧零 token 读会话事件流（后台增量扫描），按轮统计 reasoning 里「短行（≤2 字）占比」和分句重复率。判据：至少 50 行起算，连续两轮 >0.15 报黄、单轮 >0.25（每 100 行）报红；分句 dedup 正常 ≥0.90、0.78–0.88 轻度、0.54–0.71 明显退化。
+
+前端经 `/api/mmy-knight/session-health` 取两个槽位（输入框右侧「健康」徽章），状态落 `<cacheDir>/knight-health.json`。定位：复读拦截管事前拦，这里管事后观测，判据同源、不分两处；要换会话前先看一眼这个徽章。
+
 ### 公共
 
 | 字段 | 默认 | 说明 |
