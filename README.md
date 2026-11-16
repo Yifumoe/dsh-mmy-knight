@@ -47,6 +47,7 @@ dsh plugin --profile desktop add file:$(pwd)
 | `repeatGuardParaMin` | 3 | 整段重复：连续几行全等 |
 | `repeatGuardSentMin` | 5 | 句子复读：同一句出现几次（窗口 40 句，去重率 ≤50% 才算循环；工具调用前导语自动跳过） |
 | `repeatGuardLoopMin` | 4 | 原地打转：短行重复多少次 |
+| `repeatGuardMaxRun` | 10 | 最长连续相同句数：连续几句一模一样算复读（实测正常思考最多 6 连、异常最少 45 连，10 落在空隙里；0 = 关） |
 | `repeatGuardShortRepeat` | 8 | 口头禅：同一极短句出现几次 |
 | `repeatGuardTinyRepeat` | 5 | 两字行口癖：≤2 字的行（「跑。」）在 40 行窗口里出现几次算打转（还要占窗口 ≥10%；正文不翻倍） |
 | `repeatGuardBody` | 1 | 也查正文（默认开；正文重复是真实事故） |
@@ -74,6 +75,8 @@ dsh plugin --profile desktop add file:$(pwd)
 | `progressNudgeSteps` | 0 | 连续几步「只调工具、没出声（正文或 mmy_say 语音）」就催一次语音播报（0 = 关） |
 
 话术池 10 条随机挑，避免连续重复；每条以「（过程纪律提醒）」开头、以「不要复述本句。」结尾，防止被复读判据当成正文复读。2026-11-11 起改为「用 mmy_say 语音播报进展，不必写正文」，沉默判据也认语音调用。
+
+2026-11-17 起，每轮的三条重申（思考语言 / 交流习惯 / 行动锚）由三条 user message 合并成一条注入：内容不变、条数减三，省掉每轮重复的框架开销；`thinkingLangGuard`、`progressNudgeSteps` 的开关逻辑不受影响。
 
 ### 思考语言
 
