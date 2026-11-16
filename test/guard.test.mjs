@@ -12,7 +12,9 @@ import {
   fingerprint,
   guardStream,
   logHit,
+  dedupFingerprint,
   probeWithTimeout,
+  RECOVERY_NUDGES,
   repeatGuardStats,
   stripCode,
   sweepDegenerate,
@@ -45,6 +47,10 @@ function fullCfg(overrides = {}) {
     foldMinChars: 300,
     toolLoopMin: 3,
     toolWindow: 20,
+    dedup: true,
+    dedupWindowMin: 10,
+    dedupMaxPasses: 2,
+    dedupText: false,
     cacheDir: tempDir(),
     ...overrides,
   };
@@ -109,6 +115,10 @@ test('guardStream：思考段复读会补 block-end + finish(stop)', async () =>
   }
   assert.ok(out.some((c) => c.type === 'finish' && c.reason?.kind === 'stop'), '应截断');
   assert.ok(out.some((c) => c.type === 'block-end'), '应补 block-end');
+  // 2026-11-10 回归：截断必须产出可见 text 块，否则落库消息没有正文（3b01e080 的「被截断」）。
+  const textEnd = out.find((c) => c.type === 'block-end' && c.block?.type === 'text');
+  assert.ok(textEnd, '截断时必须补一个 text 块');
+  assert.ok(textEnd.block.text.includes('复读拦截'), 'text 块要说明原因');
   assert.ok(state.pending.has('s1'), '应留下续跑标记');
   rmSync(cfg.cacheDir, { recursive: true, force: true });
 });
@@ -155,6 +165,75 @@ test('guardStream：正文命中进入冷却后，后续文本与工具事件按
     'probe 之后的正文应到达',
   );
   assert.ok(out.some((c) => c.type === 'tool-call' && c.name === 'x'), '工具事件应到达');
+  rmSync(cfg.cacheDir, { recursive: true, force: true });
+});
+
+test('guardStream：思考段在冷却期放行，不再「拦→续跑→再拦」死循环（2026-11-10）', async () => {
+  const cfg = fullCfg();
+  const state = newState();
+  // 预置冷却：checkFuse 返回 pass/cooldown。
+  state.fuse.set('s1', { count: 0, since: Date.now(), cooldownUntil: Date.now() + 600000 });
+  const out = [];
+  for await (const chunk of guardStream(
+    fromList([
+      { type: 'reasoning-delta', text: '写。\n'.repeat(300), index: 0 },
+      { type: 'reasoning-delta', text: '冷却期之后的正常推理。', index: 0 },
+    ]),
+    's1',
+    state,
+    () => cfg,
+  )) {
+    out.push(chunk);
+  }
+  assert.ok(!out.some((c) => c.type === 'finish'), '冷却期思考段不应提前收尾');
+  assert.ok(
+    !out.some((c) => c.type === 'text-delta' && String(c.text).includes('复读拦截')),
+    '不应再产出截断提示（那会让整条回复变成一串「本条已截断」）',
+  );
+  assert.ok(
+    out.some((c) => c.type === 'reasoning-delta' && String(c.text).includes('冷却期之后')),
+    'probe 之后的思考应到达',
+  );
+  rmSync(cfg.cacheDir, { recursive: true, force: true });
+});
+
+test('decideFuseAction：冷却期放行预算耗尽后转 overBudget（2026-11-11 六修）', () => {
+  const state = { recovery: new Map(), cooldownHits: new Map() };
+  const cfg = { maxRecoveries: 1, handoffOnFuse: true, cooldownMax: 2 };
+  const hit = { kind: 'echo', evidence: '跑。', count: 2 };
+  const verdict = { reason: 'cooldown' };
+  assert.equal(decideFuseAction(state, 's1', cfg, hit, verdict).overBudget, undefined);
+  assert.equal(decideFuseAction(state, 's1', cfg, hit, verdict).overBudget, undefined);
+  assert.equal(decideFuseAction(state, 's1', cfg, hit, verdict).overBudget, true);
+});
+
+test('guardStream：冷却期超过放行预算就截断终止，不再无限放行（2026-11-11 六修）', async () => {
+  const cfg = fullCfg({ cooldownMax: 1 });
+  const state = newState();
+  // 预置冷却 + 已放行 1 次：下一次命中即超预算。
+  state.fuse.set('s1', { count: 0, since: Date.now(), cooldownUntil: Date.now() + 600000 });
+  state.cooldownHits = new Map([['s1', 1]]);
+  const out = [];
+  for await (const chunk of guardStream(
+    fromList([
+      { type: 'reasoning-delta', text: '跑。\n'.repeat(400), index: 0 },
+      { type: 'reasoning-delta', text: '还在继续。', index: 0 },
+    ]),
+    's1',
+    state,
+    () => cfg,
+  )) {
+    out.push(chunk);
+  }
+  assert.ok(out.some((c) => c.type === 'finish' && c.reason?.kind === 'stop'), '超预算应终止');
+  assert.ok(
+    out.some((c) => c.type === 'block-end' && c.block?.type === 'text' && String(c.block.text).includes('放行预算')),
+    '应给出终止提示',
+  );
+  assert.ok(
+    !out.some((c) => c.type === 'reasoning-delta' && String(c.text).includes('还在继续')),
+    '终止后不应继续转发',
+  );
   rmSync(cfg.cacheDir, { recursive: true, force: true });
 });
 
@@ -246,6 +325,14 @@ test('echo：不同短句连续出现不再累加', () => {
   assert.ok(analyzeRepeat('好。\n好。', BASE), '同一句连续仍应命中');
 });
 
+test('纯符号行：门槛放大 4 倍，重复 5 次不拦、12 次才拦', () => {
+  const block = (n) => Array.from({ length: n }, () => '-   →').join('\n');
+  assert.equal(analyzeRepeat(block(5), fullCfg()), null);
+  const hit = analyzeRepeat(block(12), fullCfg());
+  assert.ok(hit, '12 次纯符号重复应命中');
+  assert.equal(hit.kind, 'para');
+});
+
 test('A/B 交替：6 行短窗口也能命中', () => {
   const hit = analyzeRepeat(['A。', 'B。', 'A。', 'B。', 'A。', 'B。'].join('\n'), BASE);
   assert.ok(hit, '应命中');
@@ -333,4 +420,104 @@ test('probeWithTimeout：超时后返回 pending，由调用方消费，不丢�
   assert.ok(result.pending, '超时应返回未完成的 pending');
   const late = await result.pending;
   assert.equal(late?.value?.text, '迟到', 'pending 应能拿到迟到的 step');
+});
+
+test('恢复话术池：10 条、≤60 字、统一前缀后缀、互不重复', () => {
+  assert.equal(RECOVERY_NUDGES.length, 10);
+  const seen = new Set();
+  for (const line of RECOVERY_NUDGES) {
+    assert.ok(line.startsWith('（恢复提示）'), line);
+    assert.ok(line.endsWith('不要复述本句。'), line);
+    assert.ok([...line].length <= 60, `超长：${line}`);
+    assert.ok(!seen.has(line), `重复：${line}`);
+    seen.add(line);
+  }
+});
+
+test('turn-stopping：recovery 文本不回灌 evidence（2026-11-11）', () => {
+  const state = newState();
+  state.pending.set('sess-X', { kind: 'loop', evidence: '做。', count: 9, mode: 'recovery' });
+  let captured = '';
+  const guard = createTurnStoppingGuard(state, () => fullCfg());
+  guard({
+    agent: {
+      session: { id: 'sess-X' },
+      steer: (msg) => { captured = msg.content[0].text; },
+    },
+  });
+  assert.ok(captured.includes('第 9 次'), captured);
+  // 注意：恢复文案本身含「然后直接做。」，不能用 includes('做。') 粗判；
+  // 要防的是 evidence 原词被拼进「证据：」——kindLabel 会把它换成「原地打转」。
+  assert.ok(!/证据：\s*做/.test(captured), `不应把复读词喂回上下文：${captured}`);
+  assert.ok(captured.includes('（恢复提示）'), captured);
+});
+
+test('turn-stopping：普通 block 文本不回灌 evidence（2026-11-11）', () => {
+  const state = newState();
+  state.pending.set('sess-Y', { kind: 'echo', evidence: '好。', count: 3, mode: 'block' });
+  let captured = '';
+  const guard = createTurnStoppingGuard(state, () => fullCfg());
+  guard({
+    agent: {
+      session: { id: 'sess-Y' },
+      steer: (msg) => { captured = msg.content[0].text; },
+    },
+  });
+  assert.ok(captured.includes('第 3 次'), captured);
+  assert.ok(!captured.includes('好。'), `不应把复读词喂回上下文：${captured}`);
+});
+
+test('dedupFingerprint：计数归一后同一指纹，kind 与证据区分（2026-11-11 改动 1）', () => {
+  const a = dedupFingerprint({ kind: 'loop', evidence: '口头禅「做。」×2' });
+  const b = dedupFingerprint({ kind: 'loop', evidence: '口头禅「做。」×9' });
+  assert.equal(a, b, '计数不同应归一成同一指纹');
+  assert.equal(
+    dedupFingerprint({ kind: 'loop', evidence: '第 2 次' }),
+    dedupFingerprint({ kind: 'loop', evidence: '第 9 次' }),
+    '第 N 次应归一',
+  );
+  assert.notEqual(a, dedupFingerprint({ kind: 'echo', evidence: '口头禅「做。」×2' }), 'kind 不同应区分');
+  assert.notEqual(a, dedupFingerprint({ kind: 'loop', evidence: '口头禅「写。」×2' }), '证据不同应区分');
+});
+
+test('guardStream：同指纹跨流第二次命中放行不重切（2026-11-11 改动 1）', async () => {
+  const cfg = fullCfg({ fuse: 2 });
+  const state = newState();
+  const text = Array.from({ length: 220 }, () => '做。').join('\n');
+  const run = async () => {
+    const out = [];
+    for await (const c of guardStream(
+      fromList([
+        { type: 'reasoning-delta', text, index: 0 },
+        { type: 'reasoning-delta', text: '继续。', index: 0 },
+      ]),
+      'sess-D',
+      state,
+      () => cfg,
+    )) out.push(c);
+    return out;
+  };
+  const first = await run();
+  assert.ok(first.some((c) => c.type === 'finish'), '第一次应截断');
+  const second = await run();
+  assert.ok(!second.some((c) => c.type === 'finish'), '第二次同指纹应放行（续跑不再被切）');
+  assert.ok(second.some((c) => c.type === 'reasoning-delta'), '放行时内容要照常透传');
+});
+
+test('repeatGuardStats：冷却放行不计入熔断截断（2026-11-11 口径修复）', () => {
+  const dir = tempDir();
+  const now = new Date().toISOString();
+  writeFileSync(
+    join(dir, 'repeat-guard.jsonl'),
+    [
+      JSON.stringify({ at: now, sessionId: 's', kind: 'loop', evidence: 'x', count: 3, fused: true, reason: 'fuse', recover: 'recovery' }),
+      JSON.stringify({ at: now, sessionId: 's', kind: 'loop', evidence: 'x', count: 4, fused: true, reason: 'cooldown', recover: 'cooldown-pass' }),
+      JSON.stringify({ at: now, sessionId: 's', kind: 'loop', evidence: 'x', count: 5, fused: true, reason: 'cooldown', recover: 'cooldown' }),
+      JSON.stringify({ at: now, sessionId: 's', kind: 'echo', evidence: 'y', count: 2, fused: false }),
+    ].join('\n') + '\n',
+  );
+  const out = repeatGuardStats({ cacheDir: dir }, { days: 1 });
+  assert.ok(out.includes('熔断截断 1 次'), out);
+  assert.ok(out.includes('冷却放行 2 次'), out);
+  rmSync(dir, { recursive: true, force: true });
 });

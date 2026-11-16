@@ -7,7 +7,7 @@ DSH 的「小伊的守护骑士」：拦住模型复读打转、催它别闷头�
 | 模块 | 干什么 |
 | --- | --- |
 | 复读拦截 | 挂在 `llm/stream` 上实时看思考段（可选正文），发现碎嘴短句、整段重复、句子复读、原地打转、工具调用重复就打住，经 `agent/turn-stopping` 推一条带证据的续跑指令；连续熔断会先静默冷却，再不行就转强制交接 |
-| 过程纪律 | 挂在 `agent/pre-step` 上，连续 N 步「只调工具没说话」就注入一条提醒，催模型用正文通报进度（默认关，`progressNudgeSteps` 调） |
+| 过程纪律 | 挂在 `agent/pre-step` 上，连续 N 步「只调工具没说话」就注入一条提醒，催模型用 mmy_say 语音播报进度（默认关，`progressNudgeSteps` 调） |
 | 思考语言 | 每轮注入中文思考约束；流式检测思考段里的英文，strict 模式经 `agent/turn-stopping` 推「用中文重来」 |
 | 调度器重试 | `dsh-schedule` 在「到点任务全失败」时不再排下一次 timer，任务会永久休眠；每 60 秒调一次 `requestDrive()` 让它重新扫描 |
 
@@ -45,16 +45,22 @@ dsh plugin --profile desktop add file:$(pwd)
 | `repeatGuardEnabled` | 0 | 总开关（1 开 / 0 关） |
 | `repeatGuardEchoMin` | 2 | 碎嘴短句连续几次算复读（单字项固定 3 次） |
 | `repeatGuardParaMin` | 3 | 整段重复：连续几行全等 |
-| `repeatGuardSentMin` | 5 | 句子复读：同一句出现几次（窗口 40 句，去重率 ≤50% 才算循环） |
+| `repeatGuardSentMin` | 5 | 句子复读：同一句出现几次（窗口 40 句，去重率 ≤50% 才算循环；工具调用前导语自动跳过） |
 | `repeatGuardLoopMin` | 4 | 原地打转：短行重复多少次 |
 | `repeatGuardShortRepeat` | 8 | 口头禅：同一极短句出现几次 |
+| `repeatGuardTinyRepeat` | 5 | 两字行口癖：≤2 字的行（「跑。」）在 40 行窗口里出现几次算打转（还要占窗口 ≥10%；正文不翻倍） |
 | `repeatGuardBody` | 1 | 也查正文（默认开；正文重复是真实事故） |
 | `repeatGuardNudgeRun` | 3 | 系统提醒复读：连续几行含提醒标记算复读 |
+| `repeatGuardDedup` | 1 | 同指纹去重：截断后续流再命中只放行不重复 steer |
+| `repeatGuardDedupWindow` | 10 | 去重窗口（分钟） |
+| `repeatGuardDedupMaxPasses` | 2 | 同指纹每窗口最多放行几次（0 = 关） |
+| `repeatGuardDedupText` | 0 | 正文也参与去重（默认关） |
 | `repeatGuardFuse` | 2 | 熔断窗口内最多拦几次 |
 | `repeatGuardFuseWindow` | 15 | 熔断统计窗口（分钟） |
 | `repeatGuardCooldownMin` | 10 | 熔断后静默冷却（分钟） |
 | `repeatGuardMaxRecoveries` | 1 | 熔断后自动恢复几次 |
 | `repeatGuardHandoff` | 1 | 恢复后仍熔断就强制交接（默认开，开了会新建会话） |
+| `repeatGuardCooldownMax` | 8 | 冷却期放行预算：同一会话命中超过这么多次就截断终止本轮（0 = 不限） |
 | `repeatGuardFold` | 0 | 退化步折叠（默认关） |
 | `repeatGuardFoldDryRun` | 1 | 折叠先只观察 |
 | `repeatGuardFoldMinChars` | 300 | 折叠：思考段最短多少字才处理 |
@@ -65,9 +71,9 @@ dsh plugin --profile desktop add file:$(pwd)
 
 | 字段 | 默认 | 说明 |
 | --- | --- | --- |
-| `progressNudgeSteps` | 0 | 连续几步「只调工具没说话」就催一次正文（0 = 关） |
+| `progressNudgeSteps` | 0 | 连续几步「只调工具、没出声（正文或 mmy_say 语音）」就催一次语音播报（0 = 关） |
 
-话术池 10 条随机挑，避免连续重复；每条以「（过程纪律提醒）」开头、以「不要复述本句。」结尾，防止被复读判据当成正文复读。
+话术池 10 条随机挑，避免连续重复；每条以「（过程纪律提醒）」开头、以「不要复述本句。」结尾，防止被复读判据当成正文复读。2026-11-11 起改为「用 mmy_say 语音播报进展，不必写正文」，沉默判据也认语音调用。
 
 ### 思考语言
 

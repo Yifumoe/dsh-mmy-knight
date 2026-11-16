@@ -42,6 +42,20 @@ test('lastStepWasSilent：最近一条 assistant 有正文 = 说过话', () => {
   assert.equal(lastStepWasSilent(agent), false);
 });
 
+test('lastStepWasSilent：只调了 mmy_say（语音播报）= 说过话', () => {
+  const agent = makeAgent([
+    { type: 'assistant/message', data: { message: { content: [{ type: 'tool-call', name: 'mmy_say' }] } } },
+  ]);
+  assert.equal(lastStepWasSilent(agent), false);
+});
+
+test('lastStepWasSilent：调别的工具、没语音 = 仍然沉默', () => {
+  const agent = makeAgent([
+    { type: 'assistant/message', data: { message: { content: [{ type: 'tool-call', name: 'ops_bash' }] } } },
+  ]);
+  assert.equal(lastStepWasSilent(agent), true);
+});
+
 test('lastStepWasSilent：空 text 块不算说过话', () => {
   const agent = makeAgent([
     { type: 'assistant/message', data: { message: { content: [{ type: 'text', text: '   ' }] } } },
